@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>لعبة بمستويات وصوت ولمس</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #2e0854;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: white;
+      padding: 20px 0;
+    }
+    #game-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      max-width: 1000px;
+      width: 100%;
+    }
+    #game-area {
+      background: black;
+      border: 6px solid #555;
+      padding: 10px;
+      border-radius: 10px;
+      width: 95%;
+      max-width: 700px;
+      box-sizing: border-box;
+      position: relative;
+    }
+    canvas {
+      background-color: black;
+      display: block;
+      border-radius: 5px;
+      width: 100%;
+      height: 300px;
+    }
+    #sidebar {
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 10px;
+    }
+    #info {
+      font-size: 18px;
+      line-height: 1.6;
+      text-align: center;
+    }
+    button {
+      padding: 8px 14px;
+      font-size: 15px;
+      background-color: #4caf50;
+      border: none;
+      color: white;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .level-btn {
+      background-color: #7b1fa2;
+    }
+    .level-btn.active {
+      background-color: #9c27b0;
+      font-weight: bold;
+    }
+    .touch-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+      justify-content: center;
+    }
+    .touch-btn {
+      width: 50px;
+      height: 50px;
+      background-color: #607d8b;
+      color: white;
+      font-size: 20px;
+      border: none;
+      border-radius: 5px;
+    }
+    .touch-btn:active {
+      background-color: #455a64;
+    }
+  </style>
+</head>
+<body>
+
+<div id="game-container">
+  <div id="game-area">
+    <canvas id="game" width="400" height="300"></canvas>
+  </div>
+
+  <div id="info">
+    <div>المستوى: <span id="level">1</span></div>
+    <div>النقاط: <span id="score">0</span></div>
+    <div>أعلى مستوى: <span id="highLevel">1</span></div>
+    <button id="restart" style="display:none;">إعادة اللعب</button>
+  </div>
+
+  <div id="sidebar" id="level-buttons"></div>
+
+  <div class="touch-buttons">
+    <button class="touch-btn" onclick="keys.ArrowUp = true; setTimeout(()=>keys.ArrowUp=false, 200)">↑</button>
+    <button class="touch-btn" onclick="keys.ArrowLeft = true; setTimeout(()=>keys.ArrowLeft=false, 200)">←</button>
+    <button class="touch-btn" onclick="keys.ArrowDown = true; setTimeout(()=>keys.ArrowDown=false, 200)">↓</button>
+    <button class="touch-btn" onclick="keys.ArrowRight = true; setTimeout(()=>keys.ArrowRight=false, 200)">→</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const levelDisplay = document.getElementById("level");
+const scoreDisplay = document.getElementById("score");
+const highLevelDisplay = document.getElementById("highLevel");
+const restartBtn = document.getElementById("restart");
+const sidebar = document.getElementById("sidebar");
+
+let player = { x: 40, y: 150, radius: 10, speed: 4 };
+let keys = {}, obstacles = [], score = 0, level = 1, gameOver = false;
+let highLevel = parseInt(localStorage.getItem("highLevel") || "1");
+const enemySize = 30;
+const maxLevel = 20;
+
+let pulse = 0, pulseDirection = 1;
+const pulseSpeed = 0.02;
+
+const bgMusic = new Audio("sounds/bg.mp3");
+bgMusic.loop = true;
+bgMusic.volume = 0.4;
+
+const loseSound = new Audio("sounds/lose.wav");
+
+function createLevelButtons() {
+  for (let i = 1; i <= maxLevel; i++) {
+    const btn = document.createElement("button");
+    btn.textContent = `المستوى ${i}`;
+    btn.className = "level-btn";
+    btn.onclick = () => setLevel(i);
+    sidebar.appendChild(btn);
+  }
+}
+
+function updateLevelButtons() {
+  document.querySelectorAll(".level-btn").forEach((btn, idx) => {
+    btn.classList.toggle("active", idx + 1 === level);
+  });
+}
+
+function createObstacle(speed) {
+  return {
+    x: canvas.width + Math.random() * 300,
+    y: Math.random() * (canvas.height - enemySize),
+    size: enemySize,
+    speed: speed
+  };
+}
+
+function resetObstacles() {
+  obstacles = [];
+  for (let i = 0; i < level; i++) {
+    obstacles.push(createObstacle(1.2 + level * 0.2)); // سرعة أخف
+  }
+}
+
+function getEnemyColor() {
+  const r = Math.floor(102 + (255 - 102) * pulse);
+  return `rgb(${r},0,0)`;
+}
+
+function drawPlayer() {
+  ctx.fillStyle = "#03a9f4";
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawObstacle(ob) {
+  ctx.fillStyle = getEnemyColor();
+  ctx.beginPath();
+  ctx.moveTo(ob.x, ob.y);
+  ctx.lineTo(ob.x - ob.size, ob.y + ob.size / 2);
+  ctx.lineTo(ob.x - ob.size, ob.y - ob.size / 2);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function moveObstacles() {
+  obstacles.forEach(ob => {
+    ob.x -= ob.speed;
+    if (ob.x + ob.size < 0) {
+      ob.x = canvas.width + Math.random() * 400;
+      ob.y = Math.random() * (canvas.height - ob.size);
+      score++;
+      scoreDisplay.textContent = score;
+      if (score >= level * 10) {
+        if (level < maxLevel) setLevel(level + 1);
+        else {
+          gameOver = true;
+          restartBtn.style.display = "inline-block";
+        }
+      }
+    }
+  });
+}
+
+function checkCollision() {
+  for (let ob of obstacles) {
+    let px = player.x, py = player.y, pr = player.radius;
+    let left = ob.x - ob.size, right = ob.x;
+    let top = ob.y - ob.size / 2, bottom = ob.y + ob.size / 2;
+    if (
+      px + pr > left &&
+      px - pr < right &&
+      py + pr > top &&
+      py - pr < bottom
+    ) {
+      gameOver = true;
+      restartBtn.style.display = "inline-block";
+      bgMusic.pause();
+      loseSound.play();
+      if (level > highLevel) {
+        highLevel = level;
+        localStorage.setItem("highLevel", highLevel);
+      }
+      highLevelDisplay.textContent = highLevel;
+    }
+  }
+}
+
+function updatePlayer() {
+  if (keys.ArrowUp && player.y - player.radius > 0) player.y -= player.speed;
+  if (keys.ArrowDown && player.y + player.radius < canvas.height) player.y += player.speed;
+  if (keys.ArrowLeft && player.x - player.radius > 0) player.x -= player.speed;
+  if (keys.ArrowRight && player.x + player.radius < canvas.width) player.x += player.speed;
+}
+
+function setLevel(newLevel) {
+  level = newLevel;
+  score = 0;
+  gameOver = false;
+  player.x = 40;
+  player.y = canvas.height / 2;
+  levelDisplay.textContent = level;
+  scoreDisplay.textContent = score;
+  restartBtn.style.display = "none";
+  bgMusic.currentTime = 0;
+  bgMusic.play();
+  resetObstacles();
+  updateLevelButtons();
+  requestAnimationFrame(update);
+}
+
+function update() {
+  if (gameOver) {
+    ctx.fillStyle = "white";
+    ctx.font = "22px Arial";
+    ctx.fillText("انتهت اللعبة!", canvas.width / 2 - 60, canvas.height / 2);
+    return;
+  }
+
+  pulse += pulseDirection * pulseSpeed;
+  if (pulse >= 1 || pulse <= 0) pulseDirection *= -1;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  updatePlayer();
+  drawPlayer();
+  moveObstacles();
+  obstacles.forEach(drawObstacle);
+  checkCollision();
+
+  requestAnimationFrame(update);
+}
+
+restartBtn.onclick = () => setLevel(1);
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+highLevelDisplay.textContent = highLevel;
+createLevelButtons();
+setLevel(1);
+</script>
+</body>
+</html>
+
+
+
+
+
+
+
